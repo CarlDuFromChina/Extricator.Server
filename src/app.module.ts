@@ -11,6 +11,7 @@ import { TypeOrmModule, TypeOrmModuleOptions } from '@nestjs/typeorm';
 import { CheckinRecordModule } from './checkin-record/checkin-record.module';
 import { ConfigModule } from '@nestjs/config';
 import { EmailModule } from './email/email.module';
+import { RobotModule } from './robot/robot.module';
 
 var dbConfig = {
   type: process.env.TYPEORM_CONNECTION || 'postgres',
@@ -37,6 +38,7 @@ var dbConfig = {
     CheckinRecordModule,
     ConfigModule.forRoot({ isGlobal: true }),
     EmailModule,
+    RobotModule,
   ],
   controllers: [AppController],
   providers: [AppService],

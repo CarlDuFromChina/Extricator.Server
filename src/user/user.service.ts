@@ -52,18 +52,11 @@ export class UserService {
       throw new HttpException('更新失败，用户不存在', 500);
     }
 
-    // 邮箱变更需要重新验证邮箱
-    if (data.email !== user.email) {
-      user.mail_verified = false;
-    }
-
-    // 更新密码
     if (withPwd) {
       user.password = this.md5.encrypt(user.password);
     } else {
       user.password = data.password;
     }
-    
     await this.usersReporsitory.save(user);
   }
 
@@ -79,10 +72,16 @@ export class UserService {
     return result.affected > 0;
   }
 
+  /**
+   * 验证邮箱
+   * @param id
+   * @returns 
+   */
   async verifyMail(id: string) {
     var data = await this.emailService.verifyMail(id);
     if (data && data.is_success) {
       var user = await this.getData(data.user_code, false);
+      user.email = data.to_mail;
       user.mail_verified = true;
       await this.updateData(user, false);
       return true;

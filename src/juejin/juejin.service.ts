@@ -3,13 +3,14 @@ import { Injectable, InternalServerErrorException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { CheckinRecord } from 'src/checkin-record/checkin-record.entity';
 import { CheckinRecordService } from 'src/checkin-record/checkin-record.service';
-import { isEmpty } from 'src/common/assert';
+import { isEmpty, isNil } from 'src/common/assert';
 import { Repository } from 'typeorm';
 import { CheckinCounts } from './interfaces/checkin-counts.interface';
 import { CheckInData } from './interfaces/checkin-data.interface';
 import { DrawData } from './interfaces/draw-data.interface';
 import { JuejinResponse } from './interfaces/juejin-response.interface';
 import { LotteryConfigData } from './interfaces/lottery-config-data.interface';
+import { Award } from './interfaces/lottery.award.interface';
 import { Juejin } from './juejin.entity';
 
 @Injectable()
@@ -34,16 +35,20 @@ export class JuejinService {
     };
   }
 
-  private handleReponse<T>(
+  private async handleReponse<T>(
     res: JuejinResponse<T>,
-    successCb?: Function,
-    errorCb?: Function,
+    resolve?: () => Promise<void>,
+    reject?: (msg: string) => Promise<void>,
   ) {
     if (res.err_no.toString() !== '0') {
-      errorCb && errorCb(res.err_msg);
+      if (reject) {
+        await reject(res.err_msg);
+      }
       throw new InternalServerErrorException(res.err_msg);
     }
-    successCb && successCb();
+    if (resolve) {
+      await resolve();
+    }
     return res.data;
   }
 
@@ -76,7 +81,7 @@ export class JuejinService {
   /**
    * 获取奖池
    * @param code 用户编号
-   * @returns 
+   * @returns
    */
   async getLotteryConfig(code: string): Promise<LotteryConfigData> {
     const config = await this.getConfig(code);
@@ -105,27 +110,100 @@ export class JuejinService {
    * @returns
    */
   async checkin(code: string) {
-    const config = await this.getConfig(code);
-    const result = await this.httpService
-      .post('growth_api/v1/check_in', null, config)
-      .toPromise();
+    var juejin = await this.getData(code);
     var juejinRecord = new CheckinRecord();
     juejinRecord.created_at = new Date();
     juejinRecord.platform = 'juejin';
     juejinRecord.platform_name = '掘金';
     juejinRecord.user_code = code;
-    return this.handleReponse(
+    var handleSuccess = async () => {
+      juejinRecord.status = true;
+      await this.checkinRecordService.createOrUpdateData(juejinRecord);
+    };
+    var handleFail = async (msg: string) => {
+      juejinRecord.status = false;
+      juejinRecord.error_reason = msg;
+      await this.checkinRecordService.createOrUpdateData(juejinRecord);
+    };
+    if (isNil(juejin)) {
+      throw new InternalServerErrorException('未找到该用户');
+    }
+    if (isEmpty(juejin.cookie)) {
+      throw new InternalServerErrorException('未设置Cookie');
+    }
+    if (juejin.expired_at < new Date()) {
+      await handleFail('用户Cookie已过期');
+      throw new InternalServerErrorException('用户Cookie已过期');
+    }
+
+    const config = await this.getConfig(code);
+
+    await this.queryArticles(code);
+
+    const result = await this.httpService
+      .post('growth_api/v1/check_in', null, config)
+      .toPromise();
+
+    var resp = await this.handleReponse(
       result.data as JuejinResponse<CheckInData>,
-      () => {
-        juejinRecord.status = true;
-        this.checkinRecordService.createOrUpdateData(juejinRecord);
-      },
-      (msg: string) => {
-        juejinRecord.status = false;
-        juejinRecord.error_reason = msg;
-        this.checkinRecordService.createOrUpdateData(juejinRecord);
-      },
+      handleSuccess,
+      handleFail,
     );
+    return resp;
+  }
+
+  /**
+   * 查询推荐文章
+   * @param code 用户编码
+   * @returns 
+   */
+  async queryArticles(code: string) {
+    const config = await this.getConfig(code);
+    var param = {
+      client_type: 2608,
+      cursor: "0",
+      id_type: 2,
+      limit: 20,
+      sort_type: 300
+    };
+    var result = await this.httpService
+      .post('recommend_api/v1/article/recommend_all_feed?aid=2608&uuid=6980253040042001932', param, config)
+      .toPromise();
+    return result;
+  }
+
+  /**
+   * 查询大奖获奖信息
+   * @param code 用户编码
+   * @returns 
+   */
+  async queryBigAward(code: string) {
+    const config = await this.getConfig(code);
+    var param = {
+      page_no: 1,
+      page_size: 5
+    };
+    var result = await this.httpService
+      .post('growth_api/v1/lottery_history/global_big?aid=2608&uuid=6897189016987272712', param, config)
+      .toPromise();
+    return this.handleReponse(result.data as JuejinResponse<Award>);
+  }
+
+  /**
+   * 围观大奖
+   * @param code 用户编码
+   * @returns 
+   */
+  async dipLucky(code: string) {
+    const config = await this.getConfig(code);
+    var awards = await this.queryBigAward(code);
+    var param = {
+      lottery_history_id: awards.lotteries[0].history_id // 获取第一个大奖信息id
+    };
+    var result = await this.httpService
+      .post('growth_api/v1/lottery_lucky/dip_lucky?aid=2608&uuid=6897189016987272712', param, config)
+      .toPromise();
+    return result.data as JuejinResponse<any>;
   }
 
   /**
@@ -177,7 +255,7 @@ export class JuejinService {
   }
 
   async getData(userCode: string) {
-    return this.juejinReporsitory.findOne({ where: { user_code: userCode }});
+    return this.juejinReporsitory.findOne({ where: { user_code: userCode } });
   }
 
   async createData(data: Juejin, userCode: string) {
@@ -191,7 +269,9 @@ export class JuejinService {
   }
 
   async updateData(data: Juejin, userCode: string) {
-    var _data = await this.juejinReporsitory.findOne({ where: { user_code: userCode }});
+    var _data = await this.juejinReporsitory.findOne({
+      where: { user_code: userCode },
+    });
     if (!isEmpty(data.cookie)) {
       if (_data.cookie !== data.cookie) {
         var expireDate = new Date();

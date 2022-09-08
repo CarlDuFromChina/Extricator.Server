@@ -5,7 +5,7 @@ import { JdResponse } from "./interfaces/jd-response.interface";
 import { CheckinRecord } from "src/checkin-record/checkin-record.entity";
 import { CheckinRecordService } from "src/checkin-record/checkin-record.service";
 import { Jd } from "./jd.entity";
-import { isEmpty } from "src/common/assert";
+import assert, { isEmpty } from "src/common/assert";
 import { Repository } from "typeorm";
 import { InjectRepository } from "@nestjs/typeorm";
 
@@ -60,7 +60,8 @@ export class JdService {
     jdRecord.user_code = code;
     jdRecord.status = result.code === '0';
     jdRecord.error_reason = result.errorMessage;
-    this.checkinRecordService.createOrUpdateData(jdRecord);
+    await this.checkinRecordService.createOrUpdateData(jdRecord);
+    assert.isTrue(!jdRecord.status, '京东签到失败：' + result.errorMessage);
     return result;
   }
 

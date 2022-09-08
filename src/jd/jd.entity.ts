@@ -19,6 +19,12 @@ export class Jd {
    */
   @Column({ nullable: true })
   expired_at?: Date;
+  
+  /**
+   * 自动签到
+   */
+   @Column({ default: true })
+   auto_sign: boolean;
 
   /**
    * 签到成功提醒
@@ -37,6 +43,12 @@ export class Jd {
    */
    @Column({ default: true })
   enable_cookie_expired_notify: boolean;
+
+  /**
+   * 上次过期提醒时间
+   */
+  @Column({ nullable: true })
+  last_expiration_reminder_time?: Date;
 
   /**
    * 更新时间

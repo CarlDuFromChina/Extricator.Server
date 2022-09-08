@@ -39,6 +39,11 @@ export class JuejinController {
     return this.juejinService.checkin(code);
   }
 
+  @Post('dip_lucky')
+  dipLucky(@AuthUser('code') code: string) {
+    return this.juejinService.dipLucky(code);
+  }
+
   @Post('draw')
   async draw(@AuthUser('code') code: string, @Query('count') count: number) {
     const resp = await this.juejinService.draw(code, count);
