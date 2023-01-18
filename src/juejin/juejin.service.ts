@@ -22,6 +22,11 @@ export class JuejinService {
     private juejinReporsitory: Repository<Juejin>,
   ) {}
 
+  async getCookie(code: string) {
+    const data = await this.juejinReporsitory.findOne({ user_code: code });
+    return data.cookie;
+  }
+
   /**
    * 获取掘金请求头
    * @param code 用户编号
